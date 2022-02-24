@@ -154,6 +154,7 @@ struct CachedHookData
   HMODULE ownmodule = NULL;
   Threading::CriticalSection lock;
   char lowername[512] = {};
+  char lowerpath[512] = {};
 
   std::set<rdcstr> ignores;
 
@@ -162,7 +163,7 @@ struct CachedHookData
 
   int32_t posthooking = 0;
 
-  void ApplyHooks(const char *modName, HMODULE module)
+  void ApplyHooks(const char *modName, HMODULE module, const char *modPath)
   {
     {
       size_t i = 0;
@@ -172,6 +173,16 @@ struct CachedHookData
         i++;
       }
       lowername[i] = 0;
+    }
+
+    {
+      size_t i = 0;
+      while(modPath[i])
+      {
+        lowerpath[i] = (char)tolower(modPath[i]);
+        i++;
+      }
+      lowerpath[i] = 0;
     }
 
 #if ENABLED(VERBOSE_DEBUG_HOOK)
@@ -188,6 +199,9 @@ struct CachedHookData
     // renderdoc.dll, or tries to load it.
     if(strstr(lowername, "fraps") || strstr(lowername, "gameoverlayrenderer") ||
        strstr(lowername, STRINGIZE(RDOC_DLL_FILE) ".dll") == lowername)
+      return;
+
+    if(!strstr(lowerpath, "system32") && (strstr(lowername, "d3d11") || strstr(lowername, "dxgi")))
       return;
 
     // set module pointer if we are hooking exports from this module
@@ -325,6 +339,13 @@ struct CachedHookData
 #if ENABLED(VERBOSE_DEBUG_HOOK)
       RDCDEBUG("found IAT for %s", dllName);
 #endif
+
+      if((strstr(dllName, "d3d11") || strstr(dllName, "dxgi")) && strstr(lowername, "gw2-64"))
+      {
+        RDCDEBUG("skipping IAT for %s in %s", dllName, lowername);
+        importDesc++;
+        continue;
+      }
 
       DllHookset *hookset = NULL;
 
@@ -563,8 +584,9 @@ static void HookAllModules()
   if(!s_HookData->hookAll)
     return;
 
-  ForAllModules(
-      [](const MODULEENTRY32 &me32) { s_HookData->ApplyHooks(me32.szModule, me32.hModule); });
+  ForAllModules([](const MODULEENTRY32 &me32) {
+    s_HookData->ApplyHooks(me32.szModule, me32.hModule, me32.szExePath);
+  });
 
   // check if we're already in this section of code, and if so don't go in again.
   int32_t prev = Atomic::CmpExch32(&s_HookData->posthooking, 0, 1);
@@ -725,6 +747,17 @@ FARPROC WINAPI Hooked_GetProcAddress(HMODULE mod, LPCSTR func)
 {
   if(mod == NULL || func == NULL || mod == s_HookData->ownmodule)
     return GetProcAddress(mod, func);
+
+  if(strstr(func, "D3D11CreateDevice") || strstr(func, "CreateDXGIFactory"))
+  {
+    wchar_t fn[MAX_PATH];
+    if(GetModuleFileNameW(mod, fn, MAX_PATH) && wcsstr(fn, L"Guild Wars 2"))
+    {
+      RDCDEBUG("Avoiding GW2 D3D call %s", func);
+      return GetProcAddress(mod, func);
+    }
+  }
+    OutputDebugStringA("");
 
 #if ENABLED(VERBOSE_DEBUG_HOOK)
   if(OrdinalAsString((void *)func))
@@ -1009,7 +1042,7 @@ void Win32_ManualHookModule(rdcstr modName, HMODULE module)
       *hook.orig = GetProcAddress(module, hook.function.c_str());
   }
 
-  s_HookData->ApplyHooks(modName.c_str(), module);
+  s_HookData->ApplyHooks(modName.c_str(), module, nullptr);
 }
 
 // android only hooking functions, not used on win32

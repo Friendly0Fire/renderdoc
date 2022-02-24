@@ -270,8 +270,41 @@ private:
   HookedFunction<PFN_GET_DEBUG_INTERFACE> GetDebugInterface;
   HookedFunction<PFN_GET_DEBUG_INTERFACE1> GetDebugInterface1;
 
+  static HRESULT CallRealDXGIFactory(int ver, UINT Flags, REFIID riid, void **ppFactory)
+  {
+    wchar_t infoBuf[4096];
+    GetSystemDirectory(infoBuf, 4096);
+    lstrcatW(infoBuf, L"\\dxgi.dll");
+
+    HMODULE sys_dxgi = LoadLibrary(infoBuf);
+
+    PFN_CREATE_DXGI_FACTORY origDXGI0 =
+        (PFN_CREATE_DXGI_FACTORY)GetProcAddress(sys_dxgi, "CreateDXGIFactory");
+    PFN_CREATE_DXGI_FACTORY origDXGI1 =
+        (PFN_CREATE_DXGI_FACTORY)GetProcAddress(sys_dxgi, "CreateDXGIFactory1");
+    PFN_CREATE_DXGI_FACTORY2 origDXGI2 =
+        (PFN_CREATE_DXGI_FACTORY2)GetProcAddress(sys_dxgi, "CreateDXGIFactory2");
+
+    HRESULT ret = S_OK;
+    switch(ver)
+    {
+      case 0: ret = origDXGI0(riid, ppFactory); break;
+      case 1: ret = origDXGI1(riid, ppFactory); break;
+      case 2: ret = origDXGI2(Flags, riid, ppFactory); break;
+    }
+
+    return ret;
+  }
+
   static HRESULT WINAPI CreateDXGIFactory_hook(__in REFIID riid, __out void **ppFactory)
   {
+    static bool entered = false;
+
+    if(entered)
+      return CallRealDXGIFactory(0, 0, riid, ppFactory);
+
+    entered = true;
+
     if(ppFactory)
       *ppFactory = NULL;
     HRESULT ret = dxgihooks.CreateDXGIFactory()(riid, ppFactory);
@@ -279,11 +312,20 @@ private:
     if(SUCCEEDED(ret))
       RefCountDXGIObject::HandleWrap("CreateDXGIFactory", riid, ppFactory);
 
+    entered = false;
+
     return ret;
   }
 
   static HRESULT WINAPI CreateDXGIFactory1_hook(__in REFIID riid, __out void **ppFactory)
   {
+    static bool entered = false;
+
+    if(entered)
+      return CallRealDXGIFactory(1, 0, riid, ppFactory);
+
+    entered = true;
+
     if(ppFactory)
       *ppFactory = NULL;
     HRESULT ret = dxgihooks.CreateDXGIFactory1()(riid, ppFactory);
@@ -291,17 +333,28 @@ private:
     if(SUCCEEDED(ret))
       RefCountDXGIObject::HandleWrap("CreateDXGIFactory1", riid, ppFactory);
 
+    entered = false;
+
     return ret;
   }
 
   static HRESULT WINAPI CreateDXGIFactory2_hook(UINT Flags, REFIID riid, void **ppFactory)
   {
+    static bool entered = false;
+
+    if(entered)
+      return CallRealDXGIFactory(2, Flags, riid, ppFactory);
+
+    entered = true;
+
     if(ppFactory)
       *ppFactory = NULL;
     HRESULT ret = dxgihooks.CreateDXGIFactory2()(Flags, riid, ppFactory);
 
     if(SUCCEEDED(ret))
       RefCountDXGIObject::HandleWrap("CreateDXGIFactory2", riid, ppFactory);
+
+    entered = false;
 
     return ret;
   }

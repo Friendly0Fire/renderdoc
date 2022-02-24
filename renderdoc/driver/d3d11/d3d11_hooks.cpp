@@ -91,7 +91,12 @@ private:
     // if we're already inside a wrapped create, then DON'T do anything special. Just call onwards
     if(m_InsideCreate)
     {
-      return real(pAdapter, DriverType, Software, Flags, pFeatureLevels, FeatureLevels, SDKVersion,
+      wchar_t infoBuf[4096];
+      GetSystemDirectory(infoBuf, 4096);
+      lstrcatW(infoBuf, L"\\d3d11.dll");
+      HMODULE sys_d3d11 = LoadLibrary(infoBuf);
+      auto cb = (PFN_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN)GetProcAddress(sys_d3d11, "D3D11CreateDeviceAndSwapChain");
+      return cb(pAdapter, DriverType, Software, Flags, pFeatureLevels, FeatureLevels, SDKVersion,
                   pSwapChainDesc, ppSwapChain, ppDevice, pFeatureLevel, ppImmediateContext);
     }
 

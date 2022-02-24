@@ -35,6 +35,24 @@ WRAPPED_POOL_INST(WrappedIDXGIDevice4);
 
 rdcarray<D3DDeviceCallback> WrappedIDXGISwapChain4::m_D3DCallbacks;
 
+typedef struct com_vtable
+{
+  void *methods[1024];
+} com_vtable;
+
+#pragma pack(push, 1)
+typedef struct wrapped_com_obj
+{
+  com_vtable *vtable;
+  union
+  {
+    ID3D11Device *orig_dev11;
+    IDXGISwapChain4 *orig_swc;
+    IDXGIFactory5 *orig_dxgi;
+  };
+} wrapped_com_obj;
+#pragma pack(pop)
+
 ID3DDevice *GetD3DDevice(IUnknown *pDevice)
 {
   ID3DDevice *wrapDevice = NULL;
@@ -44,6 +62,12 @@ ID3DDevice *GetD3DDevice(IUnknown *pDevice)
 
   if(wrapDevice == NULL)
     wrapDevice = WrappedIDXGISwapChain4::GetD3DDevice(pDevice);
+
+  if(wrapDevice == NULL)
+  {
+    auto *wrap = (wrapped_com_obj *)pDevice;
+    return GetD3DDevice((IUnknown*)wrap->orig_dev11);
+  }
 
   return wrapDevice;
 }
