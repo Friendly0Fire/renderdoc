@@ -748,7 +748,7 @@ FARPROC WINAPI Hooked_GetProcAddress(HMODULE mod, LPCSTR func)
   if(mod == NULL || func == NULL || mod == s_HookData->ownmodule)
     return GetProcAddress(mod, func);
 
-  if(strstr(func, "D3D11CreateDevice") || strstr(func, "CreateDXGIFactory"))
+  if(!OrdinalAsString((void *)func) && (strstr(func, "D3D11CreateDevice") || strstr(func, "CreateDXGIFactory")))
   {
     wchar_t fn[MAX_PATH];
     if(GetModuleFileNameW(mod, fn, MAX_PATH) && wcsstr(fn, L"Guild Wars 2"))
@@ -757,7 +757,6 @@ FARPROC WINAPI Hooked_GetProcAddress(HMODULE mod, LPCSTR func)
       return GetProcAddress(mod, func);
     }
   }
-    OutputDebugStringA("");
 
 #if ENABLED(VERBOSE_DEBUG_HOOK)
   if(OrdinalAsString((void *)func))
